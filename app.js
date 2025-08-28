@@ -10,6 +10,48 @@ const playerChannelName = document.getElementById('playerChannelName');
 let channels = []; // all channels
 let categories = new Set();
 
+// ----- LOCALSTORAGE FUNCTIONS -----
+
+function loadUserState() {
+    const playlist = localStorage.getItem('playlistSelector');
+    const search = localStorage.getItem('searchInput');
+    const category = localStorage.getItem('categorySelector');
+
+    if (playlist) playlistSelector.value = playlist;
+    if (search) searchInput.value = search;
+    if (category) categorySelector.value = category;
+}
+
+function saveUserState() {
+    localStorage.setItem('playlistSelector', playlistSelector.value);
+    localStorage.setItem('searchInput', searchInput.value);
+    localStorage.setItem('categorySelector', categorySelector.value);
+}
+
+function saveLastChannel(channel) {
+    if (!channel) {
+        localStorage.removeItem('lastChannel');
+    } else {
+        localStorage.setItem('lastChannel', JSON.stringify(channel));
+    }
+}
+
+function restoreLastChannel() {
+    const last = localStorage.getItem('lastChannel');
+    if (last) {
+        try {
+            const channel = JSON.parse(last);
+            // Find channel by URL in current loaded list
+            const matched = channels.find(c => c.url === channel.url);
+            if (matched) {
+                openPlayer(matched);
+            }
+        } catch (e) {}
+    }
+}
+
+// ----- YOUR EXISTING FUNCTIONS, WITH ADDED LOCALSTORAGE -----
+
 function fetchAndParsePlaylist(url) {
     channelsGrid.innerHTML = "<div style='color: #999; font-size: 1.2em;'>Loading channels...</div>";
     fetch(url, { method: 'GET' })
@@ -18,6 +60,7 @@ function fetchAndParsePlaylist(url) {
             channels = parseM3U(text);
             showChannels();
             fillCategories();
+            restoreLastChannel(); // <--- Restore last channel
         }).catch(err => {
             channelsGrid.innerHTML = "<div style='color: #f44; font-size: 1.15em;'>Failed to load playlist.</div>";
         });
@@ -70,10 +113,13 @@ function showChannels() {
         channelsGrid.innerHTML = "<div style='color: #666;'>No channels found.</div>";
     }
 }
-
 function fillCategories() {
     const options = Array.from(categories).sort().map(cat => `<option value="${cat}">${cat}</option>`).join('');
     categorySelector.innerHTML = `<option value="">All Categories</option>${options}`;
+
+    // Restore selected category after filling (important when playlist changes)
+    const category = localStorage.getItem('categorySelector');
+    if (category) categorySelector.value = category;
 }
 
 function openPlayer(channel) {
@@ -81,6 +127,7 @@ function openPlayer(channel) {
     playerChannelName.textContent = channel.name;
     playerPopup.style.display = 'flex';
     document.body.style.overflow = "hidden"; // Disable scroll on popup
+    saveLastChannel(channel); // Save current playing channel in localStorage
 }
 
 closePlayer.onclick = function() {
@@ -88,16 +135,28 @@ closePlayer.onclick = function() {
     videoPlayer.pause();
     videoPlayer.src = "";
     document.body.style.overflow = "auto";
+    saveLastChannel(null); // Remove channel from localStorage when closed
 };
 
 playlistSelector.onchange = function() {
     fetchAndParsePlaylist(this.value);
+    saveUserState(); // Save playlist selection
 };
 
-searchInput.oninput = showChannels;
-categorySelector.oninput = showChannels;
+searchInput.oninput = function() {
+    showChannels();
+    saveUserState(); // Save search filter
+};
 
-// Load first playlist
+categorySelector.oninput = function() {
+    showChannels();
+    saveUserState(); // Save category filter
+};
+
+// Load user state first (playlist, search, category filter)
+loadUserState();
+
+// Load first playlist from user state, fallback to current selector value
 fetchAndParsePlaylist(playlistSelector.value);
 
 // Close popup on outside click (mobile UX)
