@@ -10,16 +10,15 @@ const playerChannelName = document.getElementById('playerChannelName');
 let channels = []; // all channels
 let categories = new Set();
 
-// ----- LOCALSTORAGE FUNCTIONS -----
+// ----- LOCALSTORAGE: LOAD/SAVE -----
 
 function loadUserState() {
     const playlist = localStorage.getItem('playlistSelector');
     const search = localStorage.getItem('searchInput');
     const category = localStorage.getItem('categorySelector');
-
     if (playlist) playlistSelector.value = playlist;
     if (search) searchInput.value = search;
-    if (category) categorySelector.value = category;
+    // Do NOT restore category here (see part 2 fix below)
 }
 
 function saveUserState() {
@@ -41,16 +40,14 @@ function restoreLastChannel() {
     if (last) {
         try {
             const channel = JSON.parse(last);
-            // Find channel by URL in current loaded list
+            // Find by URL in current channels
             const matched = channels.find(c => c.url === channel.url);
-            if (matched) {
-                openPlayer(matched);
-            }
+            if (matched) openPlayer(matched);
         } catch (e) {}
     }
 }
 
-// ----- YOUR EXISTING FUNCTIONS, WITH ADDED LOCALSTORAGE -----
+// ----- DATA HANDLING -----
 
 function fetchAndParsePlaylist(url) {
     channelsGrid.innerHTML = "<div style='color: #999; font-size: 1.2em;'>Loading channels...</div>";
@@ -59,14 +56,13 @@ function fetchAndParsePlaylist(url) {
         .then(text => {
             channels = parseM3U(text);
             showChannels();
-            fillCategories();
-            restoreLastChannel(); // <--- Restore last channel
+            fillCategories(); // fill AND restore category value here
+            restoreLastChannel(); // restore last channel if any
         }).catch(err => {
             channelsGrid.innerHTML = "<div style='color: #f44; font-size: 1.15em;'>Failed to load playlist.</div>";
         });
 }
 
-// Parse m3u
 function parseM3U(m3uText) {
     let lines = m3uText.split('\n');
     let parsed = [];
@@ -114,20 +110,27 @@ function showChannels() {
     }
 }
 function fillCategories() {
-    const options = Array.from(categories).sort().map(cat => `<option value="${cat}">${cat}</option>`).join('');
+    const options = Array.from(categories).sort().map(
+        cat => `<option value="${cat}">${cat}</option>`
+    ).join('');
     categorySelector.innerHTML = `<option value="">All Categories</option>${options}`;
-
-    // Restore selected category after filling (important when playlist changes)
-    const category = localStorage.getItem('categorySelector');
-    if (category) categorySelector.value = category;
+    // Restore category after population
+    const savedCat = localStorage.getItem('categorySelector');
+    if (savedCat && Array.from(categorySelector.options).some(o => o.value === savedCat)) {
+        categorySelector.value = savedCat;
+    } else {
+        categorySelector.value = "";
+    }
+    showChannels();  // Show channels filtered by restored category
 }
 
+// Player and UI actions
 function openPlayer(channel) {
     videoPlayer.src = channel.url;
     playerChannelName.textContent = channel.name;
     playerPopup.style.display = 'flex';
-    document.body.style.overflow = "hidden"; // Disable scroll on popup
-    saveLastChannel(channel); // Save current playing channel in localStorage
+    document.body.style.overflow = "hidden";
+    saveLastChannel(channel);
 }
 
 closePlayer.onclick = function() {
@@ -135,31 +138,29 @@ closePlayer.onclick = function() {
     videoPlayer.pause();
     videoPlayer.src = "";
     document.body.style.overflow = "auto";
-    saveLastChannel(null); // Remove channel from localStorage when closed
+    saveLastChannel(null);
 };
 
 playlistSelector.onchange = function() {
     fetchAndParsePlaylist(this.value);
-    saveUserState(); // Save playlist selection
+    saveUserState();
 };
 
 searchInput.oninput = function() {
     showChannels();
-    saveUserState(); // Save search filter
+    saveUserState();
 };
 
 categorySelector.oninput = function() {
     showChannels();
-    saveUserState(); // Save category filter
+    saveUserState();
 };
 
-// Load user state first (playlist, search, category filter)
+// Initial page load: restore state and load first playlist
 loadUserState();
-
-// Load first playlist from user state, fallback to current selector value
 fetchAndParsePlaylist(playlistSelector.value);
 
-// Close popup on outside click (mobile UX)
+// Optional: Close player on popup background click (for mobile UX)
 playerPopup.onclick = function(e) {
     if (e.target === playerPopup) closePlayer.onclick();
 };
